@@ -6,6 +6,9 @@ on:
       - main
       - new-feature
 
+env:
+  DOCKER_IMAGE: xiaojieyi/234-deploylab-frontend  # 统一镜像名称变量
+
 jobs:
   deploy-main:
     runs-on: ubuntu-latest
@@ -23,15 +26,17 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
-      - name: Build and push main image
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           push: true
-          tags: xiaojieyi/234-deploylab-frontend:latest
+          tags: ${{ env.DOCKER_IMAGE }}:latest
+          build-args: |
+            TARGET=ng-deploy
 
-      - name: Deploy to production (8086)
+      - name: Deploy to production
         uses: appleboy/ssh-action@v1.2.1
         with:
           host: ${{ secrets.HOST_SERVER }}
@@ -39,7 +44,9 @@ jobs:
           key: ${{ secrets.HOST_SSH_PRIVATE_KEY }}
           script: |
             mkdir -p /home/ubuntu/frontend
-            echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login --username ${{ secrets.DOCKER_HUB_USERNAME }} --password-stdin
+            echo "${{ secrets.DOCKER_HUB_TOKEN }}" > dockerhub_token.txt
+            docker login --username ${{ secrets.DOCKER_HUB_USERNAME }} --password-stdin < dockerhub_token.txt
+            rm dockerhub_token.txt
             docker compose -f /home/ubuntu/frontend/docker-compose.yml down || true
             docker compose -f /home/ubuntu/frontend/docker-compose.yml pull
             docker compose -f /home/ubuntu/frontend/docker-compose.yml up -d
@@ -60,24 +67,17 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
-      - name: Build and push feature image
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           push: true
-          tags: xiaojieyi/234-deploylab-frontend:new-feature
+          tags: ${{ env.DOCKER_IMAGE }}:new-feature
+          build-args: |
+            TARGET=ng-deploy
 
-      - name: Copy compose file to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.HOST_SERVER }}
-          username: ${{ secrets.HOST_USER_NAME }}
-          key: ${{ secrets.HOST_SSH_PRIVATE_KEY }}
-          source: "docker-compose-prod.yml"
-          target: "/home/ubuntu/frontend-new"
-
-      - name: Deploy to staging (9999)
+      - name: Deploy to staging
         uses: appleboy/ssh-action@v1.2.1
         with:
           host: ${{ secrets.HOST_SERVER }}
@@ -85,7 +85,9 @@ jobs:
           key: ${{ secrets.HOST_SSH_PRIVATE_KEY }}
           script: |
             mkdir -p /home/ubuntu/frontend-new
-            echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login --username ${{ secrets.DOCKER_HUB_USERNAME }} --password-stdin
+            echo "${{ secrets.DOCKER_HUB_TOKEN }}" > dockerhub_token.txt
+            docker login --username ${{ secrets.DOCKER_HUB_USERNAME }} --password-stdin < dockerhub_token.txt
+            rm dockerhub_token.txt
             docker compose -f /home/ubuntu/frontend-new/docker-compose-prod.yml down || true
             docker compose -f /home/ubuntu/frontend-new/docker-compose-prod.yml pull
             docker compose -f /home/ubuntu/frontend-new/docker-compose-prod.yml up -d
