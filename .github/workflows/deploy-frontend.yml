@@ -36,11 +36,18 @@ jobs:
           build-args: |
             TARGET=ng-deploy
 
-      - name: Prepare deployment files
+      - name: Generate deployment script
         run: |
-          mkdir -p deploy
-          cp docker-compose.yml deploy/
-          echo "DOCKER_HUB_TOKEN=${{ secrets.DOCKER_HUB_TOKEN }}" > deploy/.env
+          cat << 'EOF' > deploy.sh
+          #!/bin/bash
+          mkdir -p /home/ubuntu/frontend
+          cd /home/ubuntu/frontend
+          docker logout
+          echo "$1" | docker login --username $2 --password-stdin
+          docker compose down || true
+          docker compose up -d --pull always
+          EOF
+          chmod +x deploy.sh
 
       - name: Deploy to production
         uses: appleboy/ssh-action@v1.2.1
@@ -49,12 +56,9 @@ jobs:
           username: ${{ secrets.HOST_USER_NAME }}
           key: ${{ secrets.HOST_SSH_PRIVATE_KEY }}
           script: |
-            mkdir -p /home/ubuntu/frontend
-            cd /home/ubuntu/frontend
-            docker logout  # 清除可能存在的错误凭据
-            echo "$DOCKER_HUB_TOKEN" | docker login --username ${{ secrets.DOCKER_HUB_USERNAME }} --password-stdin
-            docker compose down || true
-            docker compose up -d --pull always
+            echo "${{ secrets.DOCKER_HUB_TOKEN }}" > token.txt
+            ./deploy.sh "$(cat token.txt)" "${{ secrets.DOCKER_HUB_USERNAME }}"
+            rm token.txt
 
   deploy-new-feature:
     runs-on: ubuntu-latest
@@ -86,9 +90,18 @@ jobs:
         run: |
           mkdir -p deploy
           cp docker-compose-prod.yml deploy/docker-compose.yml
-          echo "DOCKER_HUB_TOKEN=${{ secrets.DOCKER_HUB_TOKEN }}" > deploy/.env
+          cat << 'EOF' > deploy/deploy.sh
+          #!/bin/bash
+          mkdir -p /home/ubuntu/frontend-new
+          cd /home/ubuntu/frontend-new
+          docker logout
+          echo "$1" | docker login --username $2 --password-stdin
+          docker compose down || true
+          docker compose up -d --pull always
+          EOF
+          chmod +x deploy/deploy.sh
 
-      - name: Deploy to staging
+      - name: Upload deployment files
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.HOST_SERVER }}
@@ -97,7 +110,7 @@ jobs:
           source: "deploy/*"
           target: "/home/ubuntu/frontend-new"
 
-      - name: Start staging container
+      - name: Execute deployment
         uses: appleboy/ssh-action@v1.2.1
         with:
           host: ${{ secrets.HOST_SERVER }}
@@ -105,8 +118,6 @@ jobs:
           key: ${{ secrets.HOST_SSH_PRIVATE_KEY }}
           script: |
             cd /home/ubuntu/frontend-new
-            source .env
-            docker logout
-            echo "$DOCKER_HUB_TOKEN" | docker login --username ${{ secrets.DOCKER_HUB_USERNAME }} --password-stdin
-            docker compose down || true
-            docker compose up -d --pull always
+            echo "${{ secrets.DOCKER_HUB_TOKEN }}" > token.txt
+            ./deploy.sh "$(cat token.txt)" "${{ secrets.DOCKER_HUB_USERNAME }}"
+            rm token.txt
