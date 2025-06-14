@@ -1,0 +1,6 @@
+version: '3.3'
+services:
+  frontend:
+    image: your-docker-username/234-deploylab-frontend:latest
+    ports:
+      - "9999:80" # 关键：使用新端口
